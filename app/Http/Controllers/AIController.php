@@ -4,11 +4,65 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use OpenAI\Laravel\Facades\OpenAI;
+// use OpenAI as OpenAIPhp;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class AIController extends Controller
     
 {
+    // public function tts(Request $request) {
+    //     $request->validate([
+    //         'message' => 'required'
+    //     ]);
+    //     try {
+    //         // Call the OpenAI API to generate speech (assumes the model supports speech generation)
+    //         $speech = OpenAI::audio()->speech([
+    //             'model' => 'tts-1',
+    //             'input' => $request->message,
+    //             'voice' => 'alloy',
+    //         ]);
+
+    //         // Stream the audio response
+    //         return response()->json(['speech' => base64_encode($speech)]);
+    //     } catch (\Exception $e) {
+    //         return response()->json([
+    //             'error' => 'Failed to generate speech: ' . $e->getMessage(),
+    //         ], 500);
+    //     }
+    // }
+    public function tts(Request $request) {
+        $request->validate([
+            'message' => 'required'
+        ]);
+        try {
+            $response = new StreamedResponse(function() use ($request) {
+                $stream = OpenAI::audio()->speechStreamed([
+                    'model' => 'tts-1',
+                    'input' => $request->message,
+                    'voice' => 'alloy',
+                ]);
+
+                foreach ($stream as $chunk) {
+                    // Stream each chunk of audio data
+                    echo $chunk;
+                    ob_flush();
+                    flush();
+                }
+            });
+        // Set appropriate headers for streaming audio
+        $response->headers->set('Content-Type', 'audio/mpeg');
+        $response->headers->set('Cache-Control', 'no-cache, must-revalidate');
+        $response->headers->set('Connection', 'keep-alive');
+
+            return $response;
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Failed to generate speech: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
+
     public function ask_ai_stream(Request $request) {
         try {
             $response = new StreamedResponse(function() use ($request) {
@@ -109,11 +163,22 @@ class AIController extends Controller
     public function ask_ai_no_thread(Request $request) {
         try {
             $messages = $request->messages;
-            logger($messages);
-            $response = OpenAI::chat()->create([
+            $json = $request->json;
+            logger($json);
+            $options = [];
+            if ($json) {
+               $options =  [
                 'model' => 'gpt-3.5-turbo-1106',
+                'response_format' => ['type' => 'json_object'],
                 'messages' => $messages
-            ]);
+               ];
+            } else {
+                $options = [
+                    'model' => 'gpt-3.5-turbo-1106',
+                    'messages' => $messages
+                ];
+            }
+            $response = OpenAI::chat()->create($options);
             $content = $response->choices[0]->message->content;
             return response()->json(['response' => $content]);
         } catch(\Exception $error) {
